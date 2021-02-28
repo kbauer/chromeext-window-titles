@@ -4,15 +4,35 @@
 
 // CONFIG
 const DEBUG = false;
-const UPDATE_INTERVAL_MS = 3_000;
 
 // INSTALL HANDLERS
-updateTitle();
-window.setInterval(() => updateTitle(), UPDATE_INTERVAL_MS);
-chrome.tabs.onActivated.addListener( () => updateTitle() );
-//window.setTimeout(() => location.reload(), 1000);
+updateAllTitles();
+// try to keep in same order as documentation (alphabetical)
+chrome.tabs.onActivated.addListener((info) => updateAllTitlesOnWindow(info.windowId) );
+chrome.tabs.onAttached.addListener((tabId, attachInfo) => updateAllTitlesOnWindow(attachInfo.newWindowId));
+chrome.tabs.onCreated.addListener(tab => updateAllTitlesOnWindow(tab.windowId));
+chrome.tabs.onDetached.addListener((tabId, detachInfo) => updateAllTitlesOnWindow(detachInfo.oldWindowId));
+chrome.tabs.onMoved.addListener((tabId, moveInfo) => updateAllTitlesOnWindow(moveInfo.windowId));
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => updateAllTitlesOnWindow(removeInfo.windowId));
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => updateTitle(tabId));
+
+DEBUG && chrome.tabs.onActivated.addListener(async function (info) {
+    const tab = await asPromise(cb => chrome.tabs.get(info.tabId, cb));
+    console.log("ACTIVATED", tab.id, tab.title);
+});
+
+DEBUG && chrome.tabs.onUpdated.addListener(async function (tabId, changeInfo) {
+    const tab = await asPromise(cb => chrome.tabs.get(tabId, cb));
+    const parts = [`CHANGE for ${tab.id} ${tab.title}`];
+    for(const key in changeInfo) {
+        parts.push(`\n\t${key}: ${JSON.stringify(changeInfo[key])}`);
+    }
+    console.log(parts.join(""));
+});
 
 
+
+// MAIN CODE
 function asPromise(func) {
     // Given a function that expects a callback function as its sole argument,
     // return an equivalent promise.
@@ -24,60 +44,47 @@ function asPromise(func) {
 }
 
 
-async function updateTitle() {
-    DEBUG && console.log(
-        "____________________________________________________________\n"
-        + "Updating title...");
-    const activeTabs = await asPromise(cb=>chrome.tabs.query({active:true}, cb));
-    const tasks = [];
-    for(const activeTab of activeTabs) {
-        const windowTabs = await asPromise(cb=>chrome.tabs.getAllInWindow(activeTab.windowId, cb));
-        const titleTab = (function() {
-            const s = windowTabs[0].title;
-            if(s.match(/\[(.*)]/)) {
-                return windowTabs[0];
-            } else {
-                return null;
-            }
-        })();
 
-        // Generate task list
-        for(const tab of windowTabs) {
-            let m;
-            if( titleTab && tab.id == titleTab.id ) {
-                DEBUG && logtab(tab, "SKIP_TITLE_TAB");
-            }
-            else if (tab.url.match(/^chrome:/)) {
-                // Cannot access chrome:// urls with content scripts.
-                DEBUG && logtab(tab, "SKIP_CHROME_URL");
-            }
-            else if (titleTab && tab.id == activeTab.id) {
-                if(tab.title.startsWith(titleTab.title)) {
-                    DEBUG && logtab(tab, "KEEP_PREFIX");
-                }
-                else {
-                    logtab(tab, "ADD_PREFIX");
-                    updateTabTitle(tab, titleTab.title + " " + tab.title);
-                }
-            }
-            else if(m = tab.title.match(/^\[.*]\s*(.*)$/)) {
-                logtab(tab, "REM_PREFIX");
-                updateTabTitle(tab, m[1]);
-            }
-            else {
-                DEBUG && logtab(tab, "NOTHING");
-            }
+async function getWindowTitle(windowId) {
+    // Null indicates that there was no title tab.
+    const tabs = await new Promise(cb => chrome.tabs.query({windowId}, cb));
+    return ! tabs ? null : // when the window has been closed
+        tabs[0].title.match(/^\[.*]$/) ? tabs[0].title :
+        null;
+}
 
-        }
+async function updateTitle(tabId, overrideWindowTitle) {
+    // Update title for tabId,
+    // using either title obtained by getWindowTitle for the tabs windowId,
+    // or overrideWindowTitle if it is defined.
 
+    const tab = await new Promise(cb => chrome.tabs.get(tabId, cb));
+    const windowTitle = overrideWindowTitle || await getWindowTitle(tab.windowId);
+    const newTitle =
+          // Unchanged: Tabs named [..*], may be (future) title tab.
+          tab.title.match(/^\[.*]$/) ? tab.title :
+          // Active tabs: Add window title prefix, if any.
+          tab.active && windowTitle ? windowTitle + " " + tab.title.replace(/^\[.*?]\s*/, "") :
+          // Otherwise: Remove prefix.
+          tab.title.replace(/^\[.*?]\s*/, "");
+    if(newTitle !== tab.title) {
+        setTabTitle(tab, newTitle);
     }
 }
 
-function logtab(tab, msg) {
-    console.log("TabLog:", msg, JSON.stringify(tab.title));
+async function updateAllTitlesOnWindow(windowId) {
+    const title = await getWindowTitle(windowId);
+    const tabs = await new Promise(cb => chrome.tabs.query({windowId}, cb));
+    tabs.forEach(tab => updateTitle(tab.id));
 }
 
-function updateTabTitle(tab, newTitle) {
+async function updateAllTitles() {
+    // Use that each window has one active tab.
+    const activeTabs = await new Promise(cb => chrome.tabs.query({active:true}, cb));
+    activeTabs.forEach(tab => updateAllTitlesOnWindow(tab.windowId));
+}
+
+function setTabTitle(tab, newTitle) {
     const msg = "Update title"
         +"\n\tFrom: " + JSON.stringify(tab.title)
         +"\n\tTo:   " + JSON.stringify(newTitle);
@@ -94,18 +101,3 @@ function updateTabTitle(tab, newTitle) {
     });
 
 }
-
-
-chrome.tabs.onActivated.addListener(async function (info) {
-    const tab = await asPromise(cb => chrome.tabs.get(info.tabId, cb));
-    console.log("ACTIVATED", tab.id, tab.title);
-});
-
-chrome.tabs.onUpdated.addListener(async function (tabId, changeInfo) {
-    const tab = await asPromise(cb => chrome.tabs.get(tabId, cb));
-    const parts = [`CHANGE for ${tab.id} ${tab.title}`];
-    for(const key in changeInfo) {
-        parts.push(`\n\t${key}: ${JSON.stringify(changeInfo[key])}`);
-    }
-    console.log(parts.join(""));
-});
