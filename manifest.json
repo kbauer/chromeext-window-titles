@@ -3,15 +3,10 @@
 
     "name": "Window Title (Beta)",
     "description": "Enable assigning titles to Chrome windows.",
-    "version": "0.1",
+    "version": "0.2",
 
-    "browser_action": {
-        "default_popup": "main.html#popuppage"
-    },
-    "options_page": "main.html#optionspage", 
-    "background": {
-        "page": "main.html#backgroundpage"
-    },
+    "browser_action": { "default_popup": "main.html#popuppage" },
+    "background": { "page": "main.html#backgroundpage" },
 
     // "icons": {
     //     "128": "icon.png"

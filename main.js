@@ -5,30 +5,45 @@
 // CONFIG
 const DEBUG = false;
 
-// INSTALL HANDLERS
-updateAllTitles();
-// try to keep in same order as documentation (alphabetical)
-chrome.tabs.onActivated.addListener((info) => updateAllTitlesOnWindow(info.windowId) );
-chrome.tabs.onAttached.addListener((tabId, attachInfo) => updateAllTitlesOnWindow(attachInfo.newWindowId));
-chrome.tabs.onCreated.addListener(tab => updateAllTitlesOnWindow(tab.windowId));
-chrome.tabs.onDetached.addListener((tabId, detachInfo) => updateAllTitlesOnWindow(detachInfo.oldWindowId));
-chrome.tabs.onMoved.addListener((tabId, moveInfo) => updateAllTitlesOnWindow(moveInfo.windowId));
-chrome.tabs.onRemoved.addListener((tabId, removeInfo) => updateAllTitlesOnWindow(removeInfo.windowId));
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => updateTitle(tabId));
+if(location.hash === "#backgroundpage") {
+    // INSTALL HANDLERS
+    updateAllTitles();
+    // try to keep in same order as documentation (alphabetical)
+    chrome.tabs.onActivated.addListener((info) => updateAllTitlesOnWindow(info.windowId) );
+    chrome.tabs.onAttached.addListener((tabId, attachInfo) => updateAllTitlesOnWindow(attachInfo.newWindowId));
+    chrome.tabs.onCreated.addListener(tab => updateAllTitlesOnWindow(tab.windowId));
+    chrome.tabs.onDetached.addListener((tabId, detachInfo) => updateAllTitlesOnWindow(detachInfo.oldWindowId));
+    chrome.tabs.onMoved.addListener((tabId, moveInfo) => updateAllTitlesOnWindow(moveInfo.windowId));
+    chrome.tabs.onRemoved.addListener((tabId, removeInfo) => updateAllTitlesOnWindow(removeInfo.windowId));
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo) => updateTitle(tabId));
 
-DEBUG && chrome.tabs.onActivated.addListener(async function (info) {
-    const tab = await asPromise(cb => chrome.tabs.get(info.tabId, cb));
-    console.log("ACTIVATED", tab.id, tab.title);
-});
+    DEBUG && chrome.tabs.onActivated.addListener(async function (info) {
+        const tab = await asPromise(cb => chrome.tabs.get(info.tabId, cb));
+        console.log("ACTIVATED", tab.id, tab.title);
+    });
 
-DEBUG && chrome.tabs.onUpdated.addListener(async function (tabId, changeInfo) {
-    const tab = await asPromise(cb => chrome.tabs.get(tabId, cb));
-    const parts = [`CHANGE for ${tab.id} ${tab.title}`];
-    for(const key in changeInfo) {
-        parts.push(`\n\t${key}: ${JSON.stringify(changeInfo[key])}`);
-    }
-    console.log(parts.join(""));
-});
+    DEBUG && chrome.tabs.onUpdated.addListener(async function (tabId, changeInfo) {
+        const tab = await asPromise(cb => chrome.tabs.get(tabId, cb));
+        const parts = [`CHANGE for ${tab.id} ${tab.title}`];
+        for(const key in changeInfo) {
+            parts.push(`\n\t${key}: ${JSON.stringify(changeInfo[key])}`);
+        }
+        console.log(parts.join(""));
+    });
+}
+else if(location.hash === "#popuppage") {
+    (async function handlePopupPage() {
+        // For now: Require deleting old title tab manually. It may still be wanted after all.
+        const newTitle = window.prompt("What title you do want to assign?");
+        const div = create(null, "DIV");
+        create(div, "TITLE", e => e.innerText = `[${newTitle}]`);
+        create(div, "H1",    e => e.innerText = `[${newTitle}]`);
+        const tab = asPromise(cb => chrome.tabs.create({
+            url: `data:text/html,${div.innerHTML}`,
+            index: 0
+        }, cb));
+    })();
+}
 
 
 
@@ -41,6 +56,17 @@ function asPromise(func) {
             func(resolve);
         }
     );
+}
+
+function create(parent, tag, callback) {
+    const element = document.createElement(tag);
+    if(callback!==undefined) {
+        callback(element);
+    }
+    if(parent!==null) {
+        parent.appendChild(element);
+    }
+    return element;
 }
 
 
