@@ -8,9 +8,9 @@
     "browser_action": { "default_popup": "main.html#popuppage" },
     "background": { "page": "main.html#backgroundpage" },
 
-    // "icons": {
-    //     "128": "icon.png"
-    // },
+    "icons": {
+        "64": "icon.png"
+    },
 
 
     // TODO: FIND WAY TO CHANGE TAB TITLES
