@@ -34,11 +34,30 @@ if(location.hash === "#backgroundpage") {
 else if(location.hash === "#popuppage") {
     (async function handlePopupPage() {
         // For now: Require deleting old title tab manually. It may still be wanted after all.
-        const newTitle = window.prompt("What title you do want to assign?");
+        const tab = await new Promise(cb => chrome.tabs.getSelected(cb));
+        const currentTitle = await (async function() {
+            const tmp = await getWindowTitle(tab.windowId);
+            if(tmp === null) {
+                return tmp;
+            } else {
+                const m = tmp.match(/^\[(.*)]$/);
+                if(m) {
+                    return m[1];
+                } else {
+                    return tmp;
+                }
+            }
+        })();
+
+        // A plan to use content scripts for displaying the popup more conveniently was scrapped, as
+        // it would not work on some tabs. So, either accept that the popup is placed weirdly, or
+        // write a custom popup using the popup html page.
+        const newTitle = window.prompt("What title you do want to assign?", currentTitle);
+
         const div = create(null, "DIV");
         create(div, "TITLE", e => e.innerText = `[${newTitle}]`);
         create(div, "H1",    e => e.innerText = `[${newTitle}]`);
-        const tab = asPromise(cb => chrome.tabs.create({
+        const newTab = asPromise(cb => chrome.tabs.create({
             url: `data:text/html,${div.innerHTML}`,
             index: 0
         }, cb));
