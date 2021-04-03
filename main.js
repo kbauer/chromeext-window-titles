@@ -33,18 +33,19 @@ if(location.hash === "#backgroundpage") {
 }
 else if(location.hash === "#popuppage") {
     (async function handlePopupPage() {
-        // For now: Require deleting old title tab manually. It may still be wanted after all.
-        const tab = await new Promise(cb => chrome.tabs.getSelected(cb));
-        const currentTitle = await (async function() {
-            const tmp = await getWindowTitle(tab.windowId);
-            if(tmp === null) {
-                return tmp;
+        const currentTab = await new Promise(cb => chrome.tabs.getSelected(cb));
+        const currentWindowId = currentTab.windowId;
+        const currentWindowTitleTabOrNull = await getWindowTitleTab(currentWindowId);
+        const currentTitleSansBracketsOrNull = await (async function() {
+            if(currentWindowTitleTabOrNull === null) {
+                return null;
             } else {
-                const m = tmp.match(/^\[(.*)]$/);
+                const fullTitle = currentWindowTitleTabOrNull.title;
+                const m = fullTitle.match(/^\[(.*)]$/);
                 if(m) {
                     return m[1];
                 } else {
-                    return tmp;
+                    return fullTitle; // Safety in case matcher above is not consistent.
                 }
             }
         })();
@@ -52,15 +53,32 @@ else if(location.hash === "#popuppage") {
         // A plan to use content scripts for displaying the popup more conveniently was scrapped, as
         // it would not work on some tabs. So, either accept that the popup is placed weirdly, or
         // write a custom popup using the popup html page.
-        const newTitle = window.prompt("What title you do want to assign?", currentTitle);
+        const newTitle = window.prompt("What title you do want to assign?", currentTitleSansBracketsOrNull);
 
-        const div = create(null, "DIV");
-        create(div, "TITLE", e => e.innerText = `[${newTitle}]`);
-        create(div, "H1",    e => e.innerText = `[${newTitle}]`);
-        const newTab = asPromise(cb => chrome.tabs.create({
-            url: `data:text/html,${div.innerHTML}`,
-            index: 0
-        }, cb));
+        const titleTabDataUrl = (function () {
+            const div = create(null, "DIV");
+            create(div, "TITLE", e => e.innerText = `[${newTitle}]`);
+            create(div, "H1",    e => e.innerText = `[${newTitle}]`);
+            return `data:text/html,${div.innerHTML}`;
+        })();
+
+        // Delete existing tab, create new one, remember active tab.
+        //
+        // Better would be to use chrome.tabs.update(id, {url:..}),
+        // but for some reason this doesn't work (probably because of data uri?)
+        // and I couldn't figure out yet how to get a stacktrace there.
+        //
+        // Beware: An attampt to force synchronous execution by wrapping the
+        // chrome.tabs.create, chrome.tabs.remove functions failed for
+        // some reason.
+        //
+        // TODO: Needs safety against deleting tabs OTHER THAN
+        // extension-created title tabs, that happen to have same
+        // title format.
+        chrome.tabs.create({url: titleTabDataUrl, index: 0});
+        if(currentWindowTitleTabOrNull !== null) {
+            chrome.tabs.remove(currentWindowTitleTabOrNull.id);
+        }
     })();
 }
 
@@ -88,14 +106,20 @@ function create(parent, tag, callback) {
     return element;
 }
 
-
+async function getWindowTitleTab(windowId) {
+    // Return first tab of the window,
+    // if its title matches the window title pattern,
+    // or null.
+    const tabs = await new Promise(cb => chrome.tabs.query({windowId}, cb));
+    return ! tabs ? null : // when the window has been closed
+        tabs[0].title.match(/^\[.*]$/) ? tabs[0] :
+        null;
+}
 
 async function getWindowTitle(windowId) {
     // Null indicates that there was no title tab.
-    const tabs = await new Promise(cb => chrome.tabs.query({windowId}, cb));
-    return ! tabs ? null : // when the window has been closed
-        tabs[0].title.match(/^\[.*]$/) ? tabs[0].title :
-        null;
+    const titleTab = await getWindowTitleTab(windowId);
+    return titleTab === null ? null : titleTab.title;
 }
 
 async function updateTitle(tabId, overrideWindowTitle) {
