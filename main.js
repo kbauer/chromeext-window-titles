@@ -59,7 +59,7 @@ else if(location.hash === "#popuppage") {
             const div = create(null, "DIV");
             create(div, "TITLE", e => e.innerText = `[${newTitle}]`);
             create(div, "H1",    e => e.innerText = `[${newTitle}]`);
-            return `data:text/html,${div.innerHTML}`;
+            return `data:text/html;charset=utf-8,${div.innerHTML}`;
         })();
 
         // Delete existing tab, create new one, remember active tab.
