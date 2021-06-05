@@ -5,7 +5,9 @@
 // CONFIG
 const DEBUG = false;
 
-if(location.hash === "#backgroundpage") {
+console.log("TEST", location);
+
+if(location instanceof WorkerLocation) {
     // INSTALL HANDLERS
     updateAllTitles();
     // try to keep in same order as documentation (alphabetical)
@@ -142,7 +144,6 @@ async function updateTitle(tabId, overrideWindowTitle) {
 }
 
 async function updateAllTitlesOnWindow(windowId) {
-    const title = await getWindowTitle(windowId);
     const tabs = await new Promise(cb => chrome.tabs.query({windowId}, cb));
     tabs.forEach(tab => updateTitle(tab.id));
 }
@@ -154,19 +155,42 @@ async function updateAllTitles() {
 }
 
 function setTabTitle(tab, newTitle) {
-    const msg = "Update title"
+    const contextScriptMessage = `Update title of tab ${tab.id}`
         +"\n\tFrom: " + JSON.stringify(tab.title)
         +"\n\tTo:   " + JSON.stringify(newTitle);
-    console.log(msg);
-    chrome.tabs.executeScript(tab.id, {
-        code: `
-            (function windowTitleUpdateTitleInjectedCode () {
-                const newTitle = ${JSON.stringify(newTitle)};
-                const msg = "Window_Title :: " + ${JSON.stringify(msg)};
-                console.log(msg);
-                document.title = newTitle;
-            })();
-        `
-    });
 
+    console.log(contextScriptMessage);
+
+    if(tab.url.match(/^chrome:/)) {
+        console.log("Chrome:// tabs are not accessible to this extension. "
+                    +"Skipping:", tab);
+    }
+    else if (tab.url.match(/^file:/)) {
+        console.log("For file:// tabs, no working rename method has been "
+                    +"identified in manifest V3. Skipping:", tab);
+    } else {
+        // With Manifest V3 we can no longer send a code string, nor
+        // can we send a parametrized context script function. We need
+        // to use the messaging mechanism.
+        chrome.scripting.executeScript({
+            target: {tabId: tab.id},
+            function: () => {
+                if(window.____window_title_init____) {
+                    console.log("Window_Title :: Listener already added.");
+                } else {
+                    console.log("Window_Title :: Adding listener.");
+                    chrome.runtime.onMessage.addListener(({newTitle}) => {
+                        console.log("Window_Title ::",
+                                    "\nFrom old title: ", document.title,
+                                    "\nTo new title:   ", newTitle);
+                        document.title = newTitle;
+                        return true;
+                    });
+                    window.____window_title_init____ = true;
+                }
+            }
+        }).then((_) => {
+            chrome.tabs.sendMessage(tab.id, {newTitle});
+        });
+    }
 }
